@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brightsmiths/sandbox-runner/docs/schemas/attempt-request.schema.json",
+  "title": "sandbox-runner AttemptRequest",
+  "description": "Request to run one stage attempt in a fresh microVM. Carries no secrets: credentials appear only as references in host configuration, never here. See docs/spec/interfaces.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "caller",
+    "run_key",
+    "stage",
+    "idempotency_key",
+    "image",
+    "repository",
+    "checkout_sha",
+    "mount_plan",
+    "network_profile",
+    "limits",
+    "identity_role",
+    "output_schema"
+  ],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "caller": { "enum": ["cogworks", "gate-warden"] },
+    "run_key": { "$ref": "#/$defs/opaqueId" },
+    "stage": { "$ref": "#/$defs/opaqueId" },
+    "idempotency_key": { "$ref": "#/$defs/opaqueId" },
+    "traceparent": {
+      "description": "Optional W3C trace context of the caller.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
+    },
+    "image": {
+      "description": "OCI reference pinned by digest.",
+      "type": "string",
+      "pattern": "^[^@\\s]+@sha256:[0-9a-f]{64}$"
+    },
+    "repository": {
+      "description": "owner/name on the configured GitHub host.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "checkout_sha": { "$ref": "#/$defs/commitSha" },
+    "context_bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "size_bytes", "uri"],
+      "properties": {
+        "digest": { "$ref": "#/$defs/sha256Digest" },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "uri": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
+    "mount_plan": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref"],
+          "properties": { "ref": { "type": "string", "minLength": 1, "maxLength": 512 } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inline"],
+          "properties": { "inline": { "$ref": "#/$defs/mountPlan" } }
+        }
+      ]
+    },
+    "network_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "$ref": "#/$defs/opaqueId" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "extras": {
+          "description": "Additional egress destinations; each must be declared in the stage contract and known to host configuration.",
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/opaqueId" }
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vcpus", "memory_mib", "wall_clock_seconds"],
+      "properties": {
+        "vcpus": { "type": "integer", "minimum": 1 },
+        "memory_mib": { "type": "integer", "minimum": 128 },
+        "wall_clock_seconds": { "type": "integer", "minimum": 1 },
+        "disk_mib": { "type": "integer", "minimum": 1 },
+        "output_max_bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "identity_role": {
+      "description": "Stage identity role, e.g. builder, oracle, designer, reviewer, gate.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "output_schema": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "path", "revision"],
+          "properties": {
+            "repository": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+            "path": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "revision": { "$ref": "#/$defs/commitSha" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["digest"],
+          "properties": { "digest": { "$ref": "#/$defs/sha256Digest" } }
+        }
+      ]
+    },
+    "output_record_mode": { "enum": ["comment", "committed_file"] },
+    "output_record_path": {
+      "description": "Workspace-relative path of the record file when output_record_mode = committed_file.",
+      "$ref": "#/$defs/relativePath"
+    },
+    "output_record_target": {
+      "description": "Issue or PR number for the comment when output_record_mode = comment.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "stage_branch": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9._/-]+$"
+    },
+    "sign_oracle_manifest": { "type": "boolean", "default": false },
+    "require_commits": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "caller": { "const": "cogworks" } } },
+      "then": { "required": ["stage_branch", "output_record_mode"] }
+    },
+    {
+      "if": { "properties": { "caller": { "const": "gate-warden" } } },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["stage_branch"] },
+            { "required": ["output_record_mode"] },
+            { "required": ["output_record_target"] },
+            { "required": ["output_record_path"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": { "properties": { "output_record_mode": { "const": "comment" } }, "required": ["output_record_mode"] },
+      "then": { "required": ["output_record_target"] }
+    },
+    {
+      "if": { "properties": { "output_record_mode": { "const": "committed_file" } }, "required": ["output_record_mode"] },
+      "then": { "required": ["output_record_path"] }
+    },
+    {
+      "if": { "properties": { "sign_oracle_manifest": { "const": true } }, "required": ["sign_oracle_manifest"] },
+      "then": { "properties": { "identity_role": { "const": "oracle" } } }
+    }
+  ],
+  "$defs": {
+    "opaqueId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+    "commitSha": { "type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$" },
+    "sha256Digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "relativePath": {
+      "description": "Workspace-relative path. Normalisation (no '..' segments, no NUL) is enforced semantically by the runner as well.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$))[^\\u0000]+$"
+    },
+    "mountPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_access", "entries"],
+      "properties": {
+        "default_access": { "enum": ["absent", "read_only"] },
+        "entries": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "access"],
+            "properties": {
+              "path": { "$ref": "#/$defs/relativePath" },
+              "access": { "enum": ["read_write", "read_only", "absent"] },
+              "owner": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["uid", "gid"],
+                "properties": {
+                  "uid": { "type": "integer", "minimum": 1 },
+                  "gid": { "type": "integer", "minimum": 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
