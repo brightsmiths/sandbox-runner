@@ -1,0 +1,3 @@
+{
+    "window.title": "sandbox-runner - ${activeRepositoryBranchName}${separator}${activeEditorShort}${dirty}"
+}

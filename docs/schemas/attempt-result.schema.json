@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brightsmiths/sandbox-runner/docs/schemas/attempt-result.schema.json",
+  "title": "sandbox-runner AttemptResult",
+  "description": "Runner's account of one attempt. Never contains a pass/fail verdict on the work and never contains secrets. See docs/spec/interfaces.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "attempt_id", "correlation", "outcome", "teardown"],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "attempt_id": {
+      "description": "ULID",
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "status": {
+      "description": "in_progress only when returned for a duplicate idempotency key while the original attempt is running.",
+      "enum": ["in_progress", "finished"],
+      "default": "finished"
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_key", "stage", "caller", "trace_id"],
+      "properties": {
+        "run_key": { "type": "string", "maxLength": 128 },
+        "stage": { "type": "string", "maxLength": 128 },
+        "caller": { "enum": ["cogworks", "gate-warden"] },
+        "trace_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" }
+      }
+    },
+    "outcome": { "enum": ["published", "completed", "rejected", "failed", "invalid_request"] },
+    "reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "enum": [
+            "request_invalid",
+            "image_not_pinned",
+            "mount_plan_invalid",
+            "context_bundle_invalid",
+            "provider_unavailable",
+            "checkout_failed",
+            "budget_wall_clock",
+            "budget_memory",
+            "budget_cpu",
+            "agent_exit_nonzero",
+            "no_commits",
+            "bundle_invalid",
+            "output_invalid",
+            "scope_violation",
+            "scope_check_unavailable",
+            "manifest_mismatch",
+            "token_unavailable",
+            "push_failed",
+            "record_publish_failed"
+          ]
+        },
+        "detail": {
+          "description": "Runner-authored explanation; untrusted content only truncated and escaped.",
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "commits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_sha", "head_sha", "count"],
+      "properties": {
+        "base_sha": { "$ref": "#/$defs/commitSha" },
+        "head_sha": { "$ref": "#/$defs/commitSha" },
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "push": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch", "head_sha"],
+      "properties": {
+        "branch": { "type": "string", "maxLength": 255 },
+        "head_sha": { "$ref": "#/$defs/commitSha" }
+      }
+    },
+    "output_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record"],
+      "properties": {
+        "record": { "description": "Validated record (agent-authored; untrusted downstream).", "type": "object" },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "comment_url": { "type": "string", "format": "uri" },
+            "file_path": { "type": "string", "maxLength": 1024 }
+          }
+        }
+      }
+    },
+    "dispute_record": { "description": "Validated dispute record, if raised.", "type": "object" },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict"],
+      "properties": {
+        "verdict": { "enum": ["in_scope", "out_of_scope", "not_checked"] },
+        "violations": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "type": "string", "maxLength": 1024 }
+        }
+      }
+    },
+    "oracle_manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest"],
+      "properties": {
+        "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "signature_ref": { "type": "string", "maxLength": 2048 }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wall_clock_seconds": { "type": "number", "minimum": 0 },
+        "cpu_seconds": { "type": "number", "minimum": 0 },
+        "peak_memory_mib": { "type": "number", "minimum": 0 },
+        "disk_mib": { "type": "number", "minimum": 0 }
+      }
+    },
+    "timings": {
+      "description": "Per-phase durations in milliseconds.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "validate": { "type": "integer", "minimum": 0 },
+        "provision": { "type": "integer", "minimum": 0 },
+        "vm_boot": { "type": "integer", "minimum": 0 },
+        "run": { "type": "integer", "minimum": 0 },
+        "collect": { "type": "integer", "minimum": 0 },
+        "scope_check": { "type": "integer", "minimum": 0 },
+        "publish": { "type": "integer", "minimum": 0 },
+        "teardown": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trace_id", "truncated"],
+      "properties": {
+        "trace_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "log_archive_ref": { "type": "string", "maxLength": 2048 },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "teardown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confirmed"],
+      "properties": {
+        "confirmed": { "type": "boolean" },
+        "failure": { "const": "teardown_failed" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "outcome": { "enum": ["rejected", "failed", "invalid_request"] } } },
+      "then": { "required": ["reason"] }
+    },
+    {
+      "if": { "properties": { "outcome": { "const": "published" } } },
+      "then": {
+        "required": ["push", "output_record", "scope"],
+        "properties": { "scope": { "properties": { "verdict": { "const": "in_scope" } } } }
+      }
+    },
+    {
+      "if": { "properties": { "correlation": { "properties": { "caller": { "const": "gate-warden" } } } } },
+      "then": { "not": { "required": ["push"] } }
+    }
+  ],
+  "$defs": {
+    "commitSha": { "type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$" }
+  }
+}
